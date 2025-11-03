@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline';" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Queue Cleaner</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Queue Cleaner</h1>
+      <button id="refresh-queues">Refresh Queues</button>
+    </header>
+    <main>
+      <section class="sidebar">
+        <h2>Queues with DLX</h2>
+        <div id="queue-list" class="queue-list"></div>
+      </section>
+      <section class="content">
+        <div id="queue-details" class="queue-details hidden">
+          <div class="queue-summary">
+            <h2 id="queue-name"></h2>
+            <div class="queue-meta">
+              <span id="queue-vhost"></span>
+              <span id="queue-dlx"></span>
+            </div>
+            <div class="dlx-selector">
+              <label for="dlx-select">Dead-letter queue:</label>
+              <select id="dlx-select"></select>
+            </div>
+            <div class="controls">
+              <label for="message-count">Messages to load:</label>
+              <input id="message-count" type="number" min="1" max="500" value="50" />
+              <button id="load-messages">Load Messages</button>
+            </div>
+          </div>
+          <div id="messages-container" class="messages-container"></div>
+        </div>
+        <div id="empty-state" class="empty-state">
+          <p>Select a queue to inspect its dead-letter messages.</p>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <span id="status">Ready.</span>
+    </footer>
+    <script src="renderer.js"></script>
+  </body>
+</html>
