@@ -34,6 +34,10 @@ app.whenReady().then(() => {
     return rabbitService.moveMessage(payload);
   });
 
+  ipcMain.handle('rabbitmq:moveAllMessages', async (_event, payload) => {
+    return rabbitService.moveAllMessages(payload);
+  });
+
   ipcMain.handle('rabbitmq:testConnection', async () => {
     await rabbitService.ensureChannel();
     return true;

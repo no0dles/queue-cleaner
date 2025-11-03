@@ -15,6 +15,12 @@
     <main>
       <section class="sidebar">
         <h2>Queues with DLX</h2>
+        <div class="filters">
+          <label for="vhost-filter">Virtual host</label>
+          <select id="vhost-filter"></select>
+          <label for="queue-search">Search queues</label>
+          <input id="queue-search" type="search" placeholder="Filter by name" />
+        </div>
         <div id="queue-list" class="queue-list"></div>
       </section>
       <section class="content">
@@ -24,6 +30,7 @@
             <div class="queue-meta">
               <span id="queue-vhost"></span>
               <span id="queue-dlx"></span>
+              <span id="queue-ready"></span>
             </div>
             <div class="dlx-selector">
               <label for="dlx-select">Dead-letter queue:</label>
@@ -33,6 +40,9 @@
               <label for="message-count">Messages to load:</label>
               <input id="message-count" type="number" min="1" max="500" value="50" />
               <button id="load-messages">Load Messages</button>
+            </div>
+            <div class="bulk-actions">
+              <button id="move-all" class="primary" disabled>Move all messages back</button>
             </div>
           </div>
           <div id="messages-container" class="messages-container"></div>

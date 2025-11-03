@@ -75,7 +75,12 @@ class RabbitMQService {
 
   async listQueuesWithDLX() {
     const queues = await this.fetchJSON('/queues');
+    const queueIndex = new Map();
     const results = [];
+
+    for (const queue of queues) {
+      queueIndex.set(`${queue.vhost}::${queue.name}`, queue);
+    }
 
     for (const queue of queues) {
       const args = queue.arguments || {};
@@ -90,14 +95,19 @@ class RabbitMQService {
         name: queue.name,
         vhost: queue.vhost,
         messages: queue.messages,
-        messagesReady: queue.messages_ready,
+        messagesReady: 0,
         deadLetterExchange: dlxExchange || null,
         deadLetterRoutingKey: args['x-dead-letter-routing-key'] || null,
         dlxQueues: []
       };
 
       if (dlxQueue) {
-        entry.dlxQueues.push({ name: dlxQueue, routingKey: args['x-dead-letter-routing-key'] || dlxQueue });
+        const dlxInfo = queueIndex.get(`${queue.vhost}::${dlxQueue}`);
+        entry.dlxQueues.push({
+          name: dlxQueue,
+          routingKey: args['x-dead-letter-routing-key'] || dlxQueue,
+          messagesReady: dlxInfo ? dlxInfo.messages_ready : 0
+        });
       }
 
       if (dlxExchange) {
@@ -112,7 +122,12 @@ class RabbitMQService {
 
         const queueBindings = bindings.filter((binding) => binding.destination_type === 'queue');
         for (const binding of queueBindings) {
-          entry.dlxQueues.push({ name: binding.destination, routingKey: binding.routing_key });
+          const bindingInfo = queueIndex.get(`${queue.vhost}::${binding.destination}`);
+          entry.dlxQueues.push({
+            name: binding.destination,
+            routingKey: binding.routing_key,
+            messagesReady: bindingInfo ? bindingInfo.messages_ready : 0
+          });
         }
       }
 
@@ -127,6 +142,7 @@ class RabbitMQService {
       });
 
       if (entry.dlxQueues.length) {
+        entry.messagesReady = entry.dlxQueues.reduce((sum, dlx) => sum + (dlx.messagesReady || 0), 0);
         results.push(entry);
       }
     }
@@ -196,7 +212,10 @@ class RabbitMQService {
     const publishOptions = this.buildPublishOptions(message);
     const routingKey = targetRoutingKey || message.routingKey || targetQueue;
 
-    await channel.publish('', routingKey, contentBuffer, publishOptions);
+    const published = channel.publish('', routingKey, contentBuffer, publishOptions);
+    if (!published) {
+      await this.waitForDrain(channel);
+    }
 
     const removed = await this.removeMessageFromQueue(channel, dlxQueue, message);
 
@@ -206,7 +225,7 @@ class RabbitMQService {
   buildPublishOptions(message) {
     const properties = message.properties || {};
     const options = {
-      headers: message.headers || {}
+      headers: this.sanitizeHeaders(message.headers || {})
     };
 
     const map = {
@@ -239,6 +258,16 @@ class RabbitMQService {
     }
 
     return options;
+  }
+
+  sanitizeHeaders(headers) {
+    const sanitized = {};
+    for (const [key, value] of Object.entries(headers || {})) {
+      if (!/^x-/i.test(key)) {
+        sanitized[key] = value;
+      }
+    }
+    return sanitized;
   }
 
   async removeMessageFromQueue(channel, queueName, targetMessage) {
@@ -275,6 +304,78 @@ class RabbitMQService {
     }
 
     return true;
+  }
+
+  buildPublishOptionsFromAmqpMessage(message) {
+    const options = {
+      headers: this.sanitizeHeaders(message.properties?.headers || {})
+    };
+
+    const copyFields = [
+      'contentType',
+      'contentEncoding',
+      'correlationId',
+      'messageId',
+      'type',
+      'appId',
+      'replyTo',
+      'expiration'
+    ];
+
+    for (const key of copyFields) {
+      if (message.properties?.[key] !== undefined) {
+        options[key] = message.properties[key];
+      }
+    }
+
+    if (message.properties?.priority !== undefined) {
+      options.priority = message.properties.priority;
+    }
+
+    if (message.properties?.timestamp !== undefined) {
+      options.timestamp = message.properties.timestamp;
+    }
+
+    if (message.properties?.deliveryMode !== undefined) {
+      options.persistent = message.properties.deliveryMode === 2;
+    }
+
+    return options;
+  }
+
+  async waitForDrain(channel) {
+    await new Promise((resolve) => channel.once('drain', resolve));
+  }
+
+  async moveAllMessages({ vhost, dlxQueue, targetQueue, targetRoutingKey }) {
+    const channel = await this.ensureChannel();
+    await channel.checkQueue(dlxQueue);
+    await channel.checkQueue(targetQueue);
+
+    let moved = 0;
+
+    while (true) {
+      const message = await channel.get(dlxQueue, { noAck: false });
+      if (!message) {
+        break;
+      }
+
+      try {
+        const routingKey = targetRoutingKey || message.fields.routingKey || targetQueue;
+        const options = this.buildPublishOptionsFromAmqpMessage(message);
+        const published = channel.publish('', routingKey, message.content, options);
+        if (!published) {
+          await this.waitForDrain(channel);
+        }
+        channel.ack(message);
+        moved += 1;
+      } catch (error) {
+        channel.nack(message, false, true);
+        throw error;
+      }
+    }
+
+    return { moved };
   }
 }
 
