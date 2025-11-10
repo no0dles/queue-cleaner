@@ -1,0 +1,18 @@
+appId: com.example.queuecleaner
+productName: Queue Cleaner
+directories:
+  output: release
+files:
+  - package.json
+  - src/**/*
+extraMetadata:
+  main: src/main/main.js
+mac:
+  category: public.app-category.developer-tools
+win:
+  target:
+    - nsis
+linux:
+  target:
+    - AppImage
+    - deb
